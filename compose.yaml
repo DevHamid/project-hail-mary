@@ -1,0 +1,12 @@
+services:
+  hailmary:
+    build: .
+    container_name: hailmary
+    ports:
+      - "4815:4815"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - DB_PATH=/app/data/notes.db
+      - PORT=4815
+    restart: unless-stopped
