@@ -1,0 +1,7 @@
+data/
+notes.db
+notes.json
+*.db-shm
+*.db-wal
+__pycache__/
+*.pyc
