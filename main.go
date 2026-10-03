@@ -19,6 +19,7 @@ type Note struct {
 	Title   string   `json:"title"`
 	Content string   `json:"content"`
 	Date    string   `json:"date"`
+	Pinned  int      `json:"pinned"`
 	Tags    []string `json:"tags"`
 }
 
@@ -87,7 +88,7 @@ func saveNote(content string) {
 }
 
 func getNotes(filter, search string) []Note {
-	q := `SELECT DISTINCT n.id, n.title, n.content, n.date FROM notes n`
+	q := `SELECT DISTINCT n.id, n.title, n.content, n.date, n.pinned FROM notes n`
 	var args []any
 	if filter != "" {
 		q += ` JOIN note_tags nt ON n.id = nt.note_id JOIN tags t ON nt.tag_id = t.id`
@@ -105,7 +106,7 @@ func getNotes(filter, search string) []Note {
 	if len(where) > 0 {
 		q += ` WHERE ` + strings.Join(where, " AND ")
 	}
-	q += ` ORDER BY n.id DESC`
+	q += ` ORDER BY n.pinned DESC, n.id DESC`
 	rows, err := db.Query(q, args...)
 	if err != nil {
 		return []Note{}
@@ -113,10 +114,10 @@ func getNotes(filter, search string) []Note {
 	defer rows.Close()
 	var notes []Note
 	for rows.Next() {
-		var n Note
-		rows.Scan(&n.ID, &n.Title, &n.Content, &n.Date)
-		notes = append(notes, n)
-	}
+				var n Note
+				rows.Scan(&n.ID, &n.Title, &n.Content, &n.Date, &n.Pinned)
+				notes = append(notes, n)
+			}
 	for i := range notes {
 		tr, _ := db.Query("SELECT t.name FROM tags t JOIN note_tags nt ON t.id = nt.tag_id WHERE nt.note_id = ?", notes[i].ID)
 		var ts []string
@@ -248,6 +249,24 @@ func main() {
 			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 			return
 		}
+		if r.Method == http.MethodPut {
+			var b struct {
+				ID      int64  `json:"id"`
+				Content string `json:"content"`
+			}
+			json.NewDecoder(r.Body).Decode(&b)
+			if b.Content != "" {
+				title := "Untitled Note"
+				lines := strings.Split(b.Content, "\n")
+				if len(lines) > 0 && lines[0] != "" {
+					title = strings.TrimPrefix(lines[0], "# ")
+				}
+				db.Exec("UPDATE notes SET title = ?, content = ? WHERE id = ?", title, b.Content, b.ID)
+				linkTags(b.ID, b.Content)
+			}
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+			return
+		}
 		if r.Method == http.MethodPatch { // toggle pin
 			var b struct {
 				ID    int64 `json:"id"`
@@ -327,13 +346,16 @@ async function loadNotes(){
 let url='/api/notes?'+new URLSearchParams({tag:activeTag||'',q:searchTerm||''}).toString();
 let res=await fetch(url);let notes=await res.json();allNotes=notes;let html='';
 for(let n of notes){let tags=(n.tags||[]).map(t=>'<span class="text-xs text-emerald-400 bg-emerald-950/50 px-2 py-0.5 rounded">#'+t+'</span>').join(' ');
-html+='<div class="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-2"><div class="flex justify-between text-xs text-gray-500"><span>'+esc(n.date)+'</span><div>'+tags+'</div></div><div class="font-semibold text-emerald-300">'+esc(n.title)+'</div><div id="view-'+n.id+'" class="md text-sm text-gray-300">'+marked.parse(n.content||'')+'</div><textarea id="edit-'+n.id+'" rows="4" class="hidden w-full bg-gray-950 border border-emerald-600 rounded-lg p-3 text-sm">'+esc(n.content)+'</textarea><div class="flex gap-2 text-xs"><button onclick="startEdit('+n.id+')" id="btn-edit-'+n.id+'" class="text-gray-400 hover:text-emerald-400">Edit</button><button onclick="updateNote('+n.id+')" id="btn-save-'+n.id+'" class="hidden text-emerald-400">Save</button><button onclick="cancelEdit('+n.id+')" id="btn-cancel-'+n.id+'" class="hidden text-gray-400">Cancel</button><button onclick="deleteNote('+n.id+')" class="text-gray-400 hover:text-red-400">Delete</button></div></div>';}
+let pinIcon=n.pinned?'📌':'📌';
+html+='<div class="bg-gray-900 border '+(n.pinned?'border-amber-600/40':'border-gray-800')+' rounded-xl p-4 space-y-2"><div class="flex justify-between text-xs text-gray-500"><span>'+esc(n.date)+'</span><div>'+tags+'</div></div><div class="font-semibold text-emerald-300">'+esc(n.title)+'</div><div id="view-'+n.id+'" class="md text-sm text-gray-300">'+marked.parse(n.content||'')+'</div><textarea id="edit-'+n.id+'" rows="4" class="hidden w-full bg-gray-950 border border-emerald-600 rounded-lg p-3 text-sm">'+esc(n.content)+'</textarea><div class="flex gap-2 text-xs"><button onclick="startEdit('+n.id+')" id="btn-edit-'+n.id+'" class="text-gray-400 hover:text-emerald-400">Edit</button><button onclick="updateNote('+n.id+')" id="btn-save-'+n.id+'" class="hidden text-emerald-400">Save</button><button onclick="cancelEdit('+n.id+')" id="btn-cancel-'+n.id+'" class="hidden text-gray-400">Cancel</button><button onclick="deleteNote('+n.id+')" class="text-gray-400 hover:text-red-400">Delete</button><button onclick="togglePin('+n.id+','+n.pinned+')" class="ml-auto text-gray-400 hover:text-amber-400">'+pinIcon+'</button></div></div>';}
+if(!notes.length){document.getElementById('notes').innerHTML='<div class="text-center py-12 text-gray-500"><div class="text-4xl mb-2">🚀</div><p>No notes yet. Write something above!</p></div>';return;}
 document.getElementById('notes').innerHTML=html;
 }
 function startEdit(id){document.getElementById('view-'+id).classList.add('hidden');document.getElementById('edit-'+id).classList.remove('hidden');document.getElementById('btn-edit-'+id).classList.add('hidden');document.getElementById('btn-save-'+id).classList.remove('hidden');document.getElementById('btn-cancel-'+id).classList.remove('hidden');}
 function cancelEdit(id){document.getElementById('view-'+id).classList.remove('hidden');document.getElementById('edit-'+id).classList.add('hidden');document.getElementById('btn-edit-'+id).classList.remove('hidden');document.getElementById('btn-save-'+id).classList.add('hidden');document.getElementById('btn-cancel-'+id).classList.add('hidden');}
 async function updateNote(id){let c=document.getElementById('edit-'+id).value;await fetch('/api/notes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,content:c})});loadNotes();loadTags();}
 async function deleteNote(id){if(!confirm("Delete note?"))return;await fetch('/api/notes?id='+id,{method:'DELETE'});loadNotes();loadTags();}
+async function togglePin(id,p){await fetch('/api/notes',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,pinned:p?0:1})});loadNotes();}
 async function saveNote(){let c=document.getElementById('content').value;if(!c)return;await fetch('/api/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:c})});document.getElementById('content').value='';loadNotes();loadTags();}
 function exportMD(){let md='';
 for(let n of allNotes){if(n.title)md+='# '+n.title+'\n\n';md+='> '+n.date+'\n\n'+(n.content||'')+'\n\n---\n\n';}
