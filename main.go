@@ -38,10 +38,12 @@ func initDB() {
 	if err != nil {
 		panic(err)
 	}
-	db.Exec(`CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, content TEXT, date TEXT)`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, content TEXT, date TEXT, pinned INTEGER DEFAULT 0)`)
 	db.Exec(`CREATE TABLE IF NOT EXISTS tags (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE)`)
 	db.Exec(`CREATE TABLE IF NOT EXISTS note_tags (note_id INTEGER, tag_id INTEGER)`)
 	db.Exec(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password_hash TEXT)`)
+	// ponytail: additive column migration, add to initDB() when schema grows
+	db.Exec(`ALTER TABLE notes ADD COLUMN pinned INTEGER DEFAULT 0`)
 }
 
 func extractTags(content string) []string {
@@ -246,21 +248,13 @@ func main() {
 			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 			return
 		}
-		if r.Method == http.MethodPut {
+		if r.Method == http.MethodPatch { // toggle pin
 			var b struct {
-				ID      int64  `json:"id"`
-				Content string `json:"content"`
+				ID    int64 `json:"id"`
+				Pinned int `json:"pinned"`
 			}
 			json.NewDecoder(r.Body).Decode(&b)
-			if b.Content != "" {
-				title := "Untitled Note"
-				lines := strings.Split(b.Content, "\n")
-				if len(lines) > 0 && lines[0] != "" {
-					title = strings.TrimPrefix(lines[0], "# ")
-				}
-				db.Exec("UPDATE notes SET title = ?, content = ? WHERE id = ?", title, b.Content, b.ID)
-				linkTags(b.ID, b.Content)
-			}
+			db.Exec("UPDATE notes SET pinned = ? WHERE id = ?", b.Pinned, b.ID)
 			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 			return
 		}
