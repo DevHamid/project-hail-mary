@@ -159,11 +159,11 @@ func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
 func loginHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Login</title>
+		fmt.Fprint(w, `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Login — Project Hail Mary</title>
 <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-</head><body class="bg-gray-950 text-gray-100 min-h-screen flex items-center justify-center">
-<div class="bg-gray-900 border border-gray-800 rounded-xl p-8 w-full max-w-md">
-<h1 class="text-2xl font-bold text-emerald-400 mb-6 text-center">Project Hail Mary</h1>
+</head><body class="bg-slate-100 text-slate-800 min-h-screen flex items-center justify-center p-4">
+<div class="bg-white border border-slate-200 shadow-sm rounded-xl p-8 w-full max-w-md">
+<h1 class="text-2xl font-bold text-emerald-600 mb-6 text-center">Project Hail Mary 🚀</h1>
 <form method="POST" class="space-y-4">
 <div><label class="block text-sm text-gray-400 mb-1">Username</label>
 <input name="username" type="text" required class="w-full bg-gray-950 border border-gray-800 rounded-lg p-3 focus:outline-none focus:border-emerald-500"></div>
@@ -237,6 +237,10 @@ func main() {
 	initDB()
 	defer db.Close()
 
+	http.HandleFunc("/manifest.webmanifest", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/manifest+json")
+		fmt.Fprint(w, `{"name":"Project Hail Mary","short_name":"HailMary","start_url":"/","display":"standalone","background_color":"#f8fafc","theme_color":"#059669"}`)
+	})
 	http.HandleFunc("/login", loginHandler)
 	http.HandleFunc("/logout", logoutHandler)
 
@@ -315,6 +319,8 @@ func main() {
 	http.HandleFunc("/", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprint(w, `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Project Hail Mary</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#059669">
 <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>.md{word-break:break-word}.md h1,.md h2{color:#059669;font-weight:700;font-size:1.1em;margin:6px 0}.md code{background:#f1f5f9;padding:2px 6px;border-radius:6px;font-size:.85em}.md pre{background:#f1f5f9;padding:12px;border-radius:10px;overflow:auto}.md pre code{background:transparent;padding:0}.md ul{list-style:disc;padding-left:20px}.md ol{list-style:decimal;padding-left:20px}.md a{color:#059669}.md table{width:100%;border-collapse:collapse;margin:8px 0;font-size:.85em;display:block;overflow-x:auto}.md th,.md td{border:1px solid #e2e8f0;padding:6px 10px;text-align:left}.md th{background:#f8fafc;font-weight:600}.md p{margin:4px 0}</style>
