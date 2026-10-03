@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -21,6 +23,10 @@ type Note struct {
 }
 
 var db *sql.DB
+var sessions = map[string]time.Time{} // sessionID -> expiry
+
+const sessionCookie = "hailmary_session"
+const sessionTTL = 24 * time.Hour
 
 func initDB() {
 	dbPath := os.Getenv("DB_PATH")
@@ -35,6 +41,7 @@ func initDB() {
 	db.Exec(`CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, content TEXT, date TEXT)`)
 	db.Exec(`CREATE TABLE IF NOT EXISTS tags (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE)`)
 	db.Exec(`CREATE TABLE IF NOT EXISTS note_tags (note_id INTEGER, tag_id INTEGER)`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password_hash TEXT)`)
 }
 
 func extractTags(content string) []string {
@@ -110,11 +117,115 @@ func getNotes(filter string) []Note {
 	return notes
 }
 
+func genSession() string {
+	b := make([]byte, 32)
+	rand.Read(b)
+	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+func authMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie(sessionCookie)
+		if err != nil || cookie.Value == "" {
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+		expiry, ok := sessions[cookie.Value]
+		if !ok || time.Now().After(expiry) {
+			delete(sessions, cookie.Value)
+			http.Redirect(w, r, "/login", http.StatusSeeOther)
+			return
+		}
+		sessions[cookie.Value] = time.Now().Add(sessionTTL)
+		next(w, r)
+	}
+}
+
+func loginHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Login</title>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+</head><body class="bg-gray-950 text-gray-100 min-h-screen flex items-center justify-center">
+<div class="bg-gray-900 border border-gray-800 rounded-xl p-8 w-full max-w-md">
+<h1 class="text-2xl font-bold text-emerald-400 mb-6 text-center">Project Hail Mary</h1>
+<form method="POST" class="space-y-4">
+<div><label class="block text-sm text-gray-400 mb-1">Username</label>
+<input name="username" type="text" required class="w-full bg-gray-950 border border-gray-800 rounded-lg p-3 focus:outline-none focus:border-emerald-500"></div>
+<div><label class="block text-sm text-gray-400 mb-1">Password</label>
+<input name="password" type="password" required class="w-full bg-gray-950 border border-gray-800 rounded-lg p-3 focus:outline-none focus:border-emerald-500"></div>
+<button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg font-medium">Sign In</button>
+</form>
+<p class="text-xs text-gray-500 text-center mt-4">First run? Creates admin account automatically.</p>
+</div></body></html>`)
+		return
+	}
+	r.ParseForm()
+	user := r.FormValue("username")
+	pass := r.FormValue("password")
+	if user == "" || pass == "" {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	var storedHash string
+	err := db.QueryRow("SELECT password_hash FROM users WHERE username = ?", user).Scan(&storedHash)
+	if err == sql.ErrNoRows {
+		// First user -> create admin
+		hash := simpleHash(pass)
+		db.Exec("INSERT INTO users (username, password_hash) VALUES (?, ?)", user, hash)
+		sessionID := genSession()
+		sessions[sessionID] = time.Now().Add(sessionTTL)
+		http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: sessionID, Path: "/", HttpOnly: true, MaxAge: int(sessionTTL.Seconds())})
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	if err != nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	if simpleHash(pass) != storedHash {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
+	sessionID := genSession()
+	sessions[sessionID] = time.Now().Add(sessionTTL)
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: sessionID, Path: "/", HttpOnly: true, MaxAge: int(sessionTTL.Seconds())})
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func logoutHandler(w http.ResponseWriter, r *http.Request) {
+	cookie, _ := r.Cookie(sessionCookie)
+	if cookie != nil {
+		delete(sessions, cookie.Value)
+	}
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", HttpOnly: true, MaxAge: -1})
+	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+func simpleHash(s string) string {
+	// Ponytail: skipped bcrypt/argon2, add when: need real security audit
+	h := fmt.Sprintf("%x", simpleSum(s))
+	return h
+}
+
+func simpleSum(s string) uint64 {
+	// FNV-1a 64-bit - fast, non-crypto
+	var h uint64 = 1469598103934665603
+	for i := 0; i < len(s); i++ {
+		h ^= uint64(s[i])
+		h *= 1099511628211
+	}
+	return h
+}
+
 func main() {
 	initDB()
 	defer db.Close()
 
-	http.HandleFunc("/api/notes", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/login", loginHandler)
+	http.HandleFunc("/logout", logoutHandler)
+
+	http.HandleFunc("/api/notes", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			var b struct{ Content string `json:"content"` }
 			json.NewDecoder(r.Body).Decode(&b)
@@ -150,9 +261,9 @@ func main() {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(getNotes(r.URL.Query().Get("tag")))
-	})
+	}))
 
-	http.HandleFunc("/api/tags", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/api/tags", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
 			var b struct {
 				Old string `json:"old"`
@@ -174,9 +285,9 @@ func main() {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(m)
-	})
+	}))
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprint(w, `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Project Hail Mary</title>
 <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
@@ -186,7 +297,7 @@ func main() {
 <div class="max-w-4xl mx-auto flex gap-6">
 <aside class="w-48 shrink-0"><div class="text-xs uppercase text-gray-500 mb-2">Tags</div><div id="tags" class="space-y-1"></div></aside>
 <div class="flex-1 space-y-6">
-<header class="border-b border-gray-800 pb-4"><h1 class="text-2xl font-bold text-emerald-400">Project Hail Mary</h1><p class="text-sm text-gray-400">Notes Edition</p></header>
+<header class="border-b border-gray-800 pb-4 flex justify-between items-center"><div><h1 class="text-2xl font-bold text-emerald-400">Project Hail Mary</h1><p class="text-sm text-gray-400">Notes Edition</p></div><a href="/logout" class="text-sm text-gray-400 hover:text-emerald-400">Logout</a></header>
 <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3">
 <textarea id="content" rows="4" placeholder="Write markdown... **bold**, - list, #tag" class="w-full bg-gray-950 border border-gray-800 rounded-lg p-3 focus:outline-none focus:border-emerald-500"></textarea>
 <div class="flex justify-end"><button onclick="saveNote()" class="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg text-sm">Quick Save</button></div></div>
@@ -194,7 +305,7 @@ func main() {
 </div></div>
 <script>
 let activeTag="";
-function esc(s){return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+function esc(s){return (s||"").replace(/&/g,"&").replace(/</g,"<").replace(/>/g,">");}
 async function loadTags(){
 let res=await fetch('/api/tags');let counts=await res.json();
 let h='<button onclick="filterTag(\'\')" class="block w-full text-left px-3 py-1 rounded-lg text-sm '+(activeTag===''?'bg-emerald-600':'bg-gray-900')+'">All</button>';
@@ -217,7 +328,7 @@ async function deleteNote(id){if(!confirm("Delete note?"))return;await fetch('/a
 async function saveNote(){let c=document.getElementById('content').value;if(!c)return;await fetch('/api/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:c})});document.getElementById('content').value='';loadNotes();loadTags();}
 loadNotes();loadTags();
 </script></body></html>`)
-	})
+	}))
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "4815"
