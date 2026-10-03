@@ -317,16 +317,16 @@ func main() {
 		fmt.Fprint(w, `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Project Hail Mary</title>
 <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<style>.md h1,.md h2{color:#6ee7b7;font-weight:700}.md code{background:#020617;padding:2px 6px;border-radius:6px}.md pre{background:#020617;padding:12px;border-radius:10px;overflow:auto}.md ul{list-style:disc;padding-left:20px}.md a{color:#34d399}</style>
-</head><body class="bg-gray-950 text-gray-100 min-h-screen p-6 font-sans">
-<div class="max-w-4xl mx-auto flex gap-6">
-<aside class="w-48 shrink-0"><div class="text-xs uppercase text-gray-500 mb-2">Tags</div><div id="tags" class="space-y-1"></div></aside>
-<div class="flex-1 space-y-6">
-<header class="border-b border-gray-800 pb-4 flex justify-between items-center"><div><h1 class="text-2xl font-bold text-emerald-400">Project Hail Mary</h1><p class="text-sm text-gray-400">Notes Edition</p></div><a href="/logout" class="text-sm text-gray-400 hover:text-emerald-400">Logout</a></header>
-<div class="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3">
-<textarea id="content" rows="4" placeholder="Write markdown... **bold**, - list, #tag" class="w-full bg-gray-950 border border-gray-800 rounded-lg p-3 focus:outline-none focus:border-emerald-500"></textarea>
-<div class="flex justify-between items-center"><button onclick="exportMD()" class="text-xs text-gray-400 hover:text-emerald-400">Export .md</button><button onclick="saveNote()" class="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg text-sm">Quick Save</button></div></div>
-<div class="bg-gray-900 border border-gray-800 rounded-xl p-3 mb-4"><input id="search" type="text" placeholder="Search notes..." class="w-full bg-gray-950 border border-gray-800 rounded-lg p-3 text-sm focus:outline-none focus:border-emerald-500"></div>
+<style>.md{word-break:break-word}.md h1,.md h2{color:#059669;font-weight:700;font-size:1.1em;margin:6px 0}.md code{background:#f1f5f9;padding:2px 6px;border-radius:6px;font-size:.85em}.md pre{background:#f1f5f9;padding:12px;border-radius:10px;overflow:auto}.md pre code{background:transparent;padding:0}.md ul{list-style:disc;padding-left:20px}.md ol{list-style:decimal;padding-left:20px}.md a{color:#059669}.md table{width:100%;border-collapse:collapse;margin:8px 0;font-size:.85em;display:block;overflow-x:auto}.md th,.md td{border:1px solid #e2e8f0;padding:6px 10px;text-align:left}.md th{background:#f8fafc;font-weight:600}.md p{margin:4px 0}</style>
+</head><body class="bg-slate-100 text-slate-800 min-h-screen p-4 sm:p-6 font-sans">
+<div class="max-w-4xl mx-auto flex flex-col sm:flex-row gap-6">
+<aside class="w-full sm:w-48 shrink-0"><div class="text-xs uppercase text-slate-400 mb-2">Tags</div><div id="tags" class="space-y-1"></div></aside>
+<div class="flex-1 min-w-0 space-y-6">
+<header class="border-b border-slate-200 pb-4 flex justify-between items-center"><div><h1 class="text-2xl font-bold text-emerald-600">Project Hail Mary</h1><p class="text-sm text-slate-500">Notes Edition</p></div><a href="/logout" class="text-sm text-slate-500 hover:text-emerald-600">Logout</a></header>
+<div class="bg-white border border-slate-200 shadow-sm rounded-xl p-4 space-y-3">
+<textarea id="content" rows="4" placeholder="Write markdown... **bold**, - list, #tag" class="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 focus:outline-none focus:border-emerald-500"></textarea>
+<div class="flex justify-between items-center"><button onclick="exportMD()" class="text-xs text-slate-500 hover:text-emerald-600">Export .md</button><button onclick="saveNote()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm">Quick Save</button></div></div>
+<div class="bg-white border border-slate-200 shadow-sm rounded-xl p-3 mb-4"><input id="search" type="text" placeholder="Search notes..." class="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm focus:outline-none focus:border-emerald-500"></div>
 <div id="notes" class="space-y-4"></div>
 </div></div>
 <script>
@@ -336,8 +336,8 @@ let allNotes=[];
 function esc(s){return (s||"").replace(/&/g,"&").replace(/</g,"<").replace(/>/g,">");}
 async function loadTags(){
 let res=await fetch('/api/tags');let counts=await res.json();
-let h='<button onclick="filterTag(\'\')" class="block w-full text-left px-3 py-1 rounded-lg text-sm '+(activeTag===''?'bg-emerald-600':'bg-gray-900')+'">All</button>';
-for(let t in counts){h+='<div class="flex items-center bg-gray-900 rounded-lg px-2 py-1"><button onclick="filterTag(\''+t+'\')" class="flex-1 text-left text-sm truncate">#'+t+' ('+counts[t]+')</button><button onclick="renameTag(\''+t+'\')" class="text-xs px-1">✏️</button></div>';}
+let h='<button onclick="filterTag(\'\')" class="block w-full text-left px-3 py-1 rounded-lg text-sm '+(activeTag===''?'bg-emerald-600 text-white':'bg-white text-slate-700 border border-slate-200')+'">All</button>';
+for(let t in counts){h+='<div class="flex items-center bg-white border border-slate-200 rounded-lg px-2 py-1"><button onclick="filterTag(\''+t+'\')" class="flex-1 text-left text-sm text-emerald-600 truncate">#'+t+' ('+counts[t]+')</button><button onclick="renameTag(\''+t+'\')" class="text-xs px-1 text-slate-400 hover:text-emerald-600">✏️</button></div>';}
 document.getElementById('tags').innerHTML=h;
 }
 function filterTag(t){activeTag=t;loadNotes();loadTags();}
@@ -347,8 +347,8 @@ let url='/api/notes?'+new URLSearchParams({tag:activeTag||'',q:searchTerm||''}).
 let res=await fetch(url);let notes=await res.json();allNotes=notes;let html='';
 for(let n of notes){let tags=(n.tags||[]).map(t=>'<span class="text-xs text-emerald-400 bg-emerald-950/50 px-2 py-0.5 rounded">#'+t+'</span>').join(' ');
 let pinIcon=n.pinned?'📌':'📌';
-html+='<div class="bg-gray-900 border '+(n.pinned?'border-amber-600/40':'border-gray-800')+' rounded-xl p-4 space-y-2"><div class="flex justify-between text-xs text-gray-500"><span>'+esc(n.date)+'</span><div>'+tags+'</div></div><div class="font-semibold text-emerald-300">'+esc(n.title)+'</div><div id="view-'+n.id+'" class="md text-sm text-gray-300">'+marked.parse(n.content||'')+'</div><textarea id="edit-'+n.id+'" rows="4" class="hidden w-full bg-gray-950 border border-emerald-600 rounded-lg p-3 text-sm">'+esc(n.content)+'</textarea><div class="flex gap-2 text-xs"><button onclick="startEdit('+n.id+')" id="btn-edit-'+n.id+'" class="text-gray-400 hover:text-emerald-400">Edit</button><button onclick="updateNote('+n.id+')" id="btn-save-'+n.id+'" class="hidden text-emerald-400">Save</button><button onclick="cancelEdit('+n.id+')" id="btn-cancel-'+n.id+'" class="hidden text-gray-400">Cancel</button><button onclick="deleteNote('+n.id+')" class="text-gray-400 hover:text-red-400">Delete</button><button onclick="togglePin('+n.id+','+n.pinned+')" class="ml-auto text-gray-400 hover:text-amber-400">'+pinIcon+'</button></div></div>';}
-if(!notes.length){document.getElementById('notes').innerHTML='<div class="text-center py-12 text-gray-500"><div class="text-4xl mb-2">🚀</div><p>No notes yet. Write something above!</p></div>';return;}
+html+='<div class="bg-white border '+(n.pinned?'border-amber-300':'border-slate-200')+' rounded-xl p-4 space-y-2 shadow-sm"><div class="flex justify-between text-xs text-slate-400"><span>'+esc(n.date)+'</span><div>'+tags+'</div></div><div class="font-semibold text-emerald-700">'+esc(n.title)+'</div><div id="view-'+n.id+'" class="md text-sm text-slate-700">'+marked.parse(n.content||'')+'</div><textarea id="edit-'+n.id+'" rows="4" class="hidden w-full bg-slate-50 border border-emerald-300 rounded-lg p-3 text-sm">'+esc(n.content)+'</textarea><div class="flex gap-2 text-xs"><button onclick="startEdit('+n.id+')" id="btn-edit-'+n.id+'" class="text-slate-400 hover:text-emerald-600">Edit</button><button onclick="updateNote('+n.id+')" id="btn-save-'+n.id+'" class="hidden text-emerald-600">Save</button><button onclick="cancelEdit('+n.id+')" id="btn-cancel-'+n.id+'" class="hidden text-slate-400">Cancel</button><button onclick="deleteNote('+n.id+')" class="text-slate-400 hover:text-red-500">Delete</button><button onclick="togglePin('+n.id+','+n.pinned+')" class="ml-auto text-slate-400 hover:text-amber-500">'+pinIcon+'</button></div></div>';}
+if(!notes.length){document.getElementById('notes').innerHTML='<div class="text-center py-12 text-slate-400"><div class="text-4xl mb-2">🚀</div><p>No notes yet. Write something above!</p></div>';return;}
 document.getElementById('notes').innerHTML=html;
 }
 function startEdit(id){document.getElementById('view-'+id).classList.add('hidden');document.getElementById('edit-'+id).classList.remove('hidden');document.getElementById('btn-edit-'+id).classList.add('hidden');document.getElementById('btn-save-'+id).classList.remove('hidden');document.getElementById('btn-cancel-'+id).classList.remove('hidden');}
