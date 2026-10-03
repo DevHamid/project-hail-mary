@@ -84,12 +84,24 @@ func saveNote(content string) {
 	linkTags(noteID, content)
 }
 
-func getNotes(filter string) []Note {
+func getNotes(filter, search string) []Note {
 	q := `SELECT DISTINCT n.id, n.title, n.content, n.date FROM notes n`
 	var args []any
 	if filter != "" {
-		q += ` JOIN note_tags nt ON n.id = nt.note_id JOIN tags t ON nt.tag_id = t.id WHERE t.name = ?`
+		q += ` JOIN note_tags nt ON n.id = nt.note_id JOIN tags t ON nt.tag_id = t.id`
+	}
+	var where []string
+	if filter != "" {
+		where = append(where, `t.name = ?`)
 		args = append(args, filter)
+	}
+	if search != "" {
+		where = append(where, `(n.title LIKE ? OR n.content LIKE ?)`)
+		like := "%" + search + "%"
+		args = append(args, like, like)
+	}
+	if len(where) > 0 {
+		q += ` WHERE ` + strings.Join(where, " AND ")
 	}
 	q += ` ORDER BY n.id DESC`
 	rows, err := db.Query(q, args...)
@@ -260,7 +272,7 @@ func main() {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(getNotes(r.URL.Query().Get("tag")))
+		json.NewEncoder(w).Encode(getNotes(r.URL.Query().Get("tag"), r.URL.Query().Get("q")))
 	}))
 
 	http.HandleFunc("/api/tags", authMiddleware(func(w http.ResponseWriter, r *http.Request) {
@@ -301,10 +313,12 @@ func main() {
 <div class="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3">
 <textarea id="content" rows="4" placeholder="Write markdown... **bold**, - list, #tag" class="w-full bg-gray-950 border border-gray-800 rounded-lg p-3 focus:outline-none focus:border-emerald-500"></textarea>
 <div class="flex justify-end"><button onclick="saveNote()" class="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded-lg text-sm">Quick Save</button></div></div>
+<div class="bg-gray-900 border border-gray-800 rounded-xl p-3 mb-4"><input id="search" type="text" placeholder="Search notes..." class="w-full bg-gray-950 border border-gray-800 rounded-lg p-3 text-sm focus:outline-none focus:border-emerald-500"></div>
 <div id="notes" class="space-y-4"></div>
 </div></div>
 <script>
 let activeTag="";
+let searchTerm="";
 function esc(s){return (s||"").replace(/&/g,"&").replace(/</g,"<").replace(/>/g,">");}
 async function loadTags(){
 let res=await fetch('/api/tags');let counts=await res.json();
@@ -315,7 +329,7 @@ document.getElementById('tags').innerHTML=h;
 function filterTag(t){activeTag=t;loadNotes();loadTags();}
 async function renameTag(o){let n=prompt("Rename #"+o+" to:",o);if(!n||n===o)return;n=n.replace(/^#/,'');await fetch('/api/tags',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({old:o,new:n})});if(activeTag===o)activeTag=n;loadNotes();loadTags();}
 async function loadNotes(){
-let url=activeTag?'/api/notes?tag='+activeTag:'/api/notes';
+let url='/api/notes?'+new URLSearchParams({tag:activeTag||'',q:searchTerm||''}).toString();
 let res=await fetch(url);let notes=await res.json();let html='';
 for(let n of notes){let tags=(n.tags||[]).map(t=>'<span class="text-xs text-emerald-400 bg-emerald-950/50 px-2 py-0.5 rounded">#'+t+'</span>').join(' ');
 html+='<div class="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-2"><div class="flex justify-between text-xs text-gray-500"><span>'+esc(n.date)+'</span><div>'+tags+'</div></div><div class="font-semibold text-emerald-300">'+esc(n.title)+'</div><div id="view-'+n.id+'" class="md text-sm text-gray-300">'+marked.parse(n.content||'')+'</div><textarea id="edit-'+n.id+'" rows="4" class="hidden w-full bg-gray-950 border border-emerald-600 rounded-lg p-3 text-sm">'+esc(n.content)+'</textarea><div class="flex gap-2 text-xs"><button onclick="startEdit('+n.id+')" id="btn-edit-'+n.id+'" class="text-gray-400 hover:text-emerald-400">Edit</button><button onclick="updateNote('+n.id+')" id="btn-save-'+n.id+'" class="hidden text-emerald-400">Save</button><button onclick="cancelEdit('+n.id+')" id="btn-cancel-'+n.id+'" class="hidden text-gray-400">Cancel</button><button onclick="deleteNote('+n.id+')" class="text-gray-400 hover:text-red-400">Delete</button></div></div>';}
@@ -326,6 +340,7 @@ function cancelEdit(id){document.getElementById('view-'+id).classList.remove('hi
 async function updateNote(id){let c=document.getElementById('edit-'+id).value;await fetch('/api/notes',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id,content:c})});loadNotes();loadTags();}
 async function deleteNote(id){if(!confirm("Delete note?"))return;await fetch('/api/notes?id='+id,{method:'DELETE'});loadNotes();loadTags();}
 async function saveNote(){let c=document.getElementById('content').value;if(!c)return;await fetch('/api/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:c})});document.getElementById('content').value='';loadNotes();loadTags();}
+document.getElementById('search').addEventListener('input',function(e){searchTerm=e.target.value;loadNotes();});
 loadNotes();loadTags();
 </script></body></html>`)
 	}))
